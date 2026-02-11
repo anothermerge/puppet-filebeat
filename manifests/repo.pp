@@ -15,19 +15,23 @@ class filebeat::repo {
 
       Class['apt::update'] -> Package['filebeat']
 
-      # Ensure GPG key is imported before configuring apt source
-      exec { 'import-elastic-gpg-key':
-        command => 'wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --dearmor -o /etc/apt/keyrings/elastic-archive-keyring.gpg',
-        creates => '/etc/apt/keyrings/elastic-archive-keyring.gpg',
-        path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
-        before  => Apt::Source['beats'],
+      # Ensure the keyrings directory exists
+      if !defined(File['/etc/apt/keyrings']) {
+        file { '/etc/apt/keyrings':
+          ensure => directory,
+          mode   => '0755',
+        }
       }
 
-      # Ensure the keyrings directory exists
-      file { '/etc/apt/keyrings':
-        ensure => directory,
-        mode   => '0755',
-        before => Exec['import-elastic-gpg-key'],
+      # Import Elastic GPG key
+      if !defined(Exec['import-elastic-gpg-key']) {
+        exec { 'import-elastic-gpg-key':
+          command => 'wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --dearmor > /etc/apt/keyrings/elastic-archive-keyring.gpg',
+          unless  => 'test -f /etc/apt/keyrings/elastic-archive-keyring.gpg && gpg --dry-run --quiet --import --import-options import-show /etc/apt/keyrings/elastic-archive-keyring.gpg 2>&1 | grep -q D88E42B4',
+          path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+          require => File['/etc/apt/keyrings'],
+          notify  => Exec['apt_update'],
+        }
       }
 
       if !defined(Apt::Source['beats']) {
@@ -37,10 +41,8 @@ class filebeat::repo {
           release  => 'stable',
           repos    => 'main',
           pin      => $filebeat::repo_priority,
-          key      => {
-            name   => 'elastic-archive-keyring.gpg',
-            source => 'https://artifacts.elastic.co/GPG-KEY-elasticsearch',
-          },
+          require  => Exec['import-elastic-gpg-key'],
+          notify   => Exec['apt_update'],
         }
       }
     }
