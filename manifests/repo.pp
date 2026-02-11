@@ -15,6 +15,21 @@ class filebeat::repo {
 
       Class['apt::update'] -> Package['filebeat']
 
+      # Ensure GPG key is imported before configuring apt source
+      exec { 'import-elastic-gpg-key':
+        command => 'wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --dearmor -o /etc/apt/keyrings/elastic-archive-keyring.gpg',
+        creates => '/etc/apt/keyrings/elastic-archive-keyring.gpg',
+        path    => ['/bin', '/usr/bin', '/sbin', '/usr/sbin'],
+        before  => Apt::Source['beats'],
+      }
+
+      # Ensure the keyrings directory exists
+      file { '/etc/apt/keyrings':
+        ensure => directory,
+        mode   => '0755',
+        before => Exec['import-elastic-gpg-key'],
+      }
+
       if !defined(Apt::Source['beats']) {
         apt::source { 'beats':
           ensure   => $filebeat::alternate_ensure,
